@@ -1,0 +1,24 @@
+version: '2.0'
+
+Sample_KafkaTriggered:
+  description: this is a kafka triggerd workflow 
+  
+  tags:
+    - KafkaTrigger
+ 
+  input:
+    - payload
+    - token
+ 
+  output:
+    result: <% $.payload %>  
+  
+  output-on-error:
+    result: "FAILED"
+  
+  tasks:
+
+    get_datafrom_payload:
+      action: std.noop
+      publish:
+        payload_out: <% $.payload %>      
