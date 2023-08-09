@@ -1,0 +1,133 @@
+
+version: '2.0'
+
+check-for-updates2:
+  description: this is a sample workflow
+  
+  type: direct
+  
+  tags:
+    - checks-prod
+
+  input:
+    - command: ''
+    - neNames: ['R2']
+    - outformat: 'raw'
+    - host: '147.75.202.107'
+    - username: 'vfsquad'
+    - password: ''
+    
+    
+  vars:
+     ttptemplate: {}
+     database: 
+       'show version': 'show_version.ttp'
+       'show chassis': 'show_chassis.ttp'
+       'show port': 'show_port.ttp'
+       'show router interface': 'show_router_interface.ttp'
+       'show router isis interface': 'show_router_isis_interface.ttp'
+       'show system information': 'show_system_information.ttp'
+       'show card detail': 'show_card_detail.ttp'
+       'show router interface detail': 'show_router_interface_detail.ttp'
+       'show card state': 'show_card_state.ttp'
+       'show router route table summary': 'show_router_route_table_summary.ttp'
+       'show system memory-pools': 'show_system_memory_pools.ttp'
+       'show router isis adjacency': 'show_router_isis_adjacency.ttp'
+       'show system alarms': 'show_system_alarms.ttp'
+       'show chassis environment': 'show_chassis_environment.ttp'
+       'show router arp': 'show_router_arp.ttp'
+       'show router isis adjacency detail': 'show_router_isis_adjacency_detail.ttp'
+       'show mda detail': 'show_mda_detail.ttp'
+       'show router bfd session': 'show_router_bfd_session.ttp'
+       'show system cpu sample-period 60': 'show_system_cpu_sample_period_60.ttp'
+     
+     
+       
+       
+  output: 
+    finaloutput: <% $.scriptoutput %>
+
+  tasks:
+    
+    
+    getvariables:
+        with-items: node in <% $.neNames %>
+        concurrency: 5
+        workflow: getcredentialsv2.ttp neName='<% $.node %>'
+        publish:
+          credentials: <% task().result.output %>
+        on-success:
+          - runSSH     
+    
+    runSSH:
+      with-items: credential in <% $.credentials %>
+      action: nsp.cli
+      input:
+        cmds:
+           - "/!classic-cli"
+           - "environment no more"
+           - command:  <% $.command %>
+             resultFilter: $.replace('\r','')        
+        host: <% $.credential.host %>
+        username: <% $.credential.username %>
+        password: <% $.credential.password %>
+        timeout: 20
+        prompt: .*
+      publish:
+        sshresults: <% task().result %> 
+      on-success:
+        - getTTPtemplate  : <% $.outformat  = 'json'%>
+        - createOutput: <% $.outformat  = 'raw'%>
+        
+    getTTPtemplate:
+      action: nsp.python
+      input:
+        script: |
+
+           import paramiko
+           ssh = paramiko.SSHClient()
+           ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+           ssh.connect('<% $.host %>', username='<% $.username %>', password='<% $.password %>')
+
+           sftp_client = ssh.open_sftp()
+           remote_file = sftp_client.open('/home/vfsquad/templates/<% $.database.get($.command) %>')
+           ttp = {}
+           try:
+               ttp["ttptemplatetext"] = remote_file.read()
+           finally:
+             remote_file.close()
+           return ttp
+      publish:
+          ttptemplate: <% task().result %> 
+      on-success:
+        - createOutput     
+          
+    createOutput:    
+      action: nsp.python
+      input:
+          script: | 
+            import sys
+            sys.path.append('/opt/nsp/.local/lib/python3.6/site-packages/')
+            from ttp import ttp
+            import json
+
+            inputtemplate = """"""
+            all_devices_output = <% $.sshresults %>
+            all_device_names = <% $.neNames %>
+
+            if "<% $.outformat %>" == "json":  
+                ttp_template = <% $.ttptemplate %>
+
+            json_dict = {} 
+            for i in range(len(all_device_names)):
+                if "<% $.outformat %>" == "json": 
+                    parser = ttp(data=all_devices_output[i][2], template=ttp_template["ttptemplatetext"])
+                    parser.parse()
+                    json_dict[all_device_names[i]] = json.loads(parser.result(format='json')[0])[0]
+                else:
+                    json_dict[all_device_names[i]] = all_devices_output[i][2]
+           
+            return json_dict
+            
+      publish:
+        scriptoutput: <% task().result %>
