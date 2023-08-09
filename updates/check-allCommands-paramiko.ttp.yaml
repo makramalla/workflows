@@ -11,7 +11,7 @@ check-allCommands-paramiko.ttp:
 
   input:
     - command: ''
-    - neNames: ['R1']
+    - neNames: ['R2']
     - outformat: 'raw'
     - host: '147.75.202.107'
     - username: 'vfsquad'
